@@ -156,7 +156,8 @@ def run_experiment(
         [
             {
                 **asdict(config),
-                "seed": seed,
+                "in_sample_seed": in_params.seed,
+                "out_sample_seed": out_params.seed,
                 "in_sample": in_sample,
                 "out_sample": out_sample,
             }
