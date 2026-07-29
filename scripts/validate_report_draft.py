@@ -66,6 +66,10 @@ FIGURE_QUALIFICATION_PATTERN = re.compile(
     r"finite-sample|single|no)\b",
     re.IGNORECASE,
 )
+DIRECT_NEGATION_PATTERN = re.compile(
+    r"\b(?:not|never|no)\s+(?:an?\s+)?$",
+    re.IGNORECASE,
+)
 ROOT = Path(__file__).resolve().parent.parent
 REPORT_PATH = ROOT / "report" / "MATH6186_case_study_draft.md"
 REFERENCE_PATH = ROOT / "report" / "references.json"
@@ -307,13 +311,8 @@ def validate_language(text: str) -> None:
     )
     for pattern, label in prohibited:
         for match in re.finditer(pattern, text, flags=re.IGNORECASE):
-            prefix = text[max(0, match.start() - 48) : match.start()]
-            explicitly_negated = re.search(
-                r"\b(?:not|never|no)\b[^.!?;\r\n]{0,32}$",
-                prefix,
-                flags=re.IGNORECASE,
-            )
-            if not explicitly_negated:
+            prefix = text[max(0, match.start() - 24) : match.start()]
+            if not DIRECT_NEGATION_PATTERN.search(prefix):
                 fail(f"Prohibited output characterization found: {label}")
 
 
