@@ -1,6 +1,6 @@
 report_section,planned_claim,evidence_file,required_columns
 3,The ODE preserves total population,outputs/data/trajectories.csv,S;I_P;I_W;R_P;total
-3-4,Core model and demand assumptions have explicit sources or modelling-assumption provenance,outputs/data/parameters.csv,scenario;beta_p;beta_w;beta_wp;gamma_p;gamma_w;delta_p;population;p_infected;p_worried;model_structure_provenance;rate_parameter_provenance;service_demand_provenance
+3-4,Core model and demand assumptions have explicit sources or modelling-assumption provenance,outputs/data/parameters.csv,alpha;beta_p;beta_w;beta_wp;gamma_p;gamma_w;delta_p;initial_susceptible;initial_infected;initial_worried;initial_recovered;population;p_infected;p_worried;cv;underage;overage;model_structure_provenance;behaviour_provenance;rate_parameter_provenance;initial_condition_provenance;service_demand_provenance;uncertainty_provenance;cost_provenance
 7.1,Behaviour changes infected and worried-well peaks,outputs/data/summary.csv,peak_infected;peak_infected_day;peak_worried;peak_worried_day
 7.1,Worried-well pressure can exceed infection pressure early,outputs/figures/figure_2_risk_ratio.png,
 7.2,Demand uncertainty changes safety capacity,outputs/data/daily_metrics.csv,scenario;mean_demand;optimized_capacity;demand_p05;demand_p95
