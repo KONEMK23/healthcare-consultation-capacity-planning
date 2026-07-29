@@ -220,20 +220,27 @@ def resolve_citation_marker(
 
 
 def _normalize_inline_math(text: str) -> str:
-    replacements = {
-        r"\alpha": "alpha",
-        r"\beta": "beta",
-        r"\gamma": "gamma",
-        r"\delta": "delta",
-        r"\tau": "tau",
-        r"\(": "",
-        r"\)": "",
-        "{,}": ",",
-        "{:}": ":",
-    }
-    for source, target in replacements.items():
-        text = text.replace(source, target)
-    return text
+    def normalize_span(match: re.Match[str]) -> str:
+        expression = match.group(1)
+        for source, target in {
+            r"\alpha": "alpha",
+            r"\beta": "beta",
+            r"\gamma": "gamma",
+            r"\delta": "delta",
+            r"\tau": "tau",
+            "{,}": ",",
+            "{:}": ":",
+        }.items():
+            expression = expression.replace(source, target)
+        expression = re.sub(r"_\{([A-Za-z0-9]+)\}", r"_\1", expression)
+        if "\\" in expression or "{" in expression or "}" in expression:
+            raise ValueError(f"Unsupported inline math: {match.group(0)}")
+        return expression
+
+    normalized = re.sub(r"\\\((.*?)\\\)", normalize_span, text)
+    if r"\(" in normalized or r"\)" in normalized:
+        raise ValueError(f"Unsupported inline math: {text}")
+    return normalized
 
 
 def resolve_inline_markup(

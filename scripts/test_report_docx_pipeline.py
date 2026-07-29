@@ -100,6 +100,23 @@ class BuilderContractTests(unittest.TestCase):
             "Use python scripts/run_analysis.py to regenerate.",
         )
 
+    def test_tex_subscript_grouping_is_not_emitted(self) -> None:
+        cases = (
+            (r"\(\beta_{WP}=0.70\)", "beta_WP=0.70"),
+            (r"\(D_{ts}\)", "D_ts"),
+        )
+        for source, expected in cases:
+            with self.subTest(source=source):
+                pieces = builder.resolve_inline_markup(source, self.references)
+                self.assertEqual(
+                    "".join(text for text, _, _ in pieces),
+                    expected,
+                )
+
+    def test_rejects_unsupported_tex_grouping(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Unsupported inline math"):
+            builder.resolve_inline_markup(r"\(x_{a+b}\)", self.references)
+
     def test_rejects_noncanonical_value_marker(self) -> None:
         with self.assertRaises(ValueError):
             builder.resolve_value_marker(
