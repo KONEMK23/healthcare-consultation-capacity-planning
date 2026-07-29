@@ -349,6 +349,25 @@ def validate_styles(styles_xml: etree._Element) -> None:
             )
 
 
+def validate_border_free_cover(
+    styles_xml: etree._Element, document_xml: etree._Element
+) -> None:
+    title_styles = styles_xml.xpath(
+        ".//w:style[@w:styleId='Title']", namespaces=NS
+    )
+    if len(title_styles) != 1:
+        fail("DOCX must contain exactly one Title style.")
+    if title_styles[0].xpath("./w:pPr/w:pBdr", namespaces=NS):
+        fail("Editorial-cover Title style must not contain paragraph borders.")
+    title_paragraphs = document_xml.xpath(
+        ".//w:body/w:p[w:pPr/w:pStyle[@w:val='Title']]", namespaces=NS
+    )
+    if len(title_paragraphs) != 1:
+        fail("Editorial cover must contain exactly one Title paragraph.")
+    if title_paragraphs[0].xpath("./w:pPr/w:pBdr", namespaces=NS):
+        fail("Editorial-cover title paragraph must not contain direct borders.")
+
+
 def validate_tables(
     document_xml: etree._Element, expected_tables: list[list[list[str]]]
 ) -> None:
@@ -690,8 +709,16 @@ def validate_content_preservation(
 
 
 def validate_page_furniture(
-    archive: zipfile.ZipFile, document_xml: etree._Element
+    archive: zipfile.ZipFile,
+    document_xml: etree._Element,
+    settings_xml: etree._Element,
 ) -> None:
+    even_and_odd = settings_xml.xpath(".//w:evenAndOddHeaders", namespaces=NS)
+    if len(even_and_odd) != 1:
+        fail(
+            "Document settings must explicitly enable odd/even page furniture "
+            "for cross-renderer consistency."
+        )
     section = document_xml.find(".//w:body/w:sectPr", NS)
     if section is None or section.find("w:titlePg", NS) is None:
         fail("The section must use a different first page to suppress cover furniture.")
@@ -712,9 +739,12 @@ def validate_page_furniture(
             if (
                 reference_type in by_type
                 or relationship_id not in relationships
-                or reference_type not in {"default", "first"}
+                or reference_type not in {"default", "even", "first"}
             ):
-                fail(f"Section {kind} references must be unique default/first pairs.")
+                fail(
+                    f"Section {kind} references must be unique "
+                    "default/even/first triples."
+                )
             relationship = relationships[relationship_id]
             target = relationship.get("Target")
             relationship_type = relationship.get("Type", "")
@@ -723,8 +753,11 @@ def validate_page_furniture(
             by_type[reference_type] = posixpath.normpath(
                 posixpath.join("word", target)
             )
-        if set(by_type) != {"default", "first"}:
-            fail(f"Section must reference exactly default and first {kind} parts.")
+        if set(by_type) != {"default", "even", "first"}:
+            fail(
+                f"Section must reference exactly default, even, and first "
+                f"{kind} parts."
+            )
         return by_type
 
     header_references = referenced_parts("header")
@@ -739,33 +772,40 @@ def validate_page_furniture(
         for name in archive.namelist()
         if re.fullmatch(r"word/footer\d+\.xml", name)
     ]
-    if len(header_parts) != 2 or len(footer_parts) != 2:
-        fail("Expected separate default and first-page header/footer parts.")
+    if len(header_parts) != 3 or len(footer_parts) != 3:
+        fail("Expected separate default, even, and first-page header/footer parts.")
     if set(header_parts) != set(header_references.values()):
         fail("Header parts must be exactly those referenced by the section.")
     if set(footer_parts) != set(footer_references.values()):
         fail("Footer parts must be exactly those referenced by the section.")
 
     default_header = xml_part(archive, header_references["default"])
+    even_header = xml_part(archive, header_references["even"])
     first_header = xml_part(archive, header_references["first"])
     expected_header = "MATH6186 | Worried-Well Consultation Capacity"
     if "".join(default_header.xpath(".//w:t/text()", namespaces=NS)) != expected_header:
         fail("Default running header text is incorrect.")
+    if "".join(even_header.xpath(".//w:t/text()", namespaces=NS)) != expected_header:
+        fail("Even-page running header text is incorrect.")
     if first_header.xpath(".//w:t/text() | .//w:instrText/text()", namespaces=NS):
         fail("First-page header must be blank.")
 
     default_footer = xml_part(archive, footer_references["default"])
+    even_footer = xml_part(archive, footer_references["even"])
     first_footer = xml_part(archive, footer_references["first"])
-    footer_paragraphs = default_footer.xpath(".//w:p", namespaces=NS)
-    if len(footer_paragraphs) != 1:
-        fail("The default page-number footer must contain exactly one paragraph.")
-    require_attribute(
-        footer_paragraphs[0].find("w:pPr/w:jc", NS),
-        "val",
-        "right",
-        "Page-number footer alignment",
-    )
-    validate_complex_field(footer_paragraphs[0], "PAGE", "2", "PAGE footer")
+    for label, footer in (("Default", default_footer), ("Even-page", even_footer)):
+        footer_paragraphs = footer.xpath(".//w:p", namespaces=NS)
+        if len(footer_paragraphs) != 1:
+            fail(f"The {label.lower()} page-number footer must contain one paragraph.")
+        require_attribute(
+            footer_paragraphs[0].find("w:pPr/w:jc", NS),
+            "val",
+            "right",
+            f"{label} page-number footer alignment",
+        )
+        validate_complex_field(
+            footer_paragraphs[0], "PAGE", "2", f"{label} PAGE footer"
+        )
     if first_footer.xpath(".//w:t/text() | .//w:instrText/text()", namespaces=NS):
         fail("First-page footer must be blank.")
     if first_footer.xpath(".//w:fldChar", namespaces=NS):
@@ -782,16 +822,18 @@ def main() -> None:
     with zipfile.ZipFile(DOCX_PATH) as archive:
         document_xml = xml_part(archive, "word/document.xml")
         styles_xml = xml_part(archive, "word/styles.xml")
+        settings_xml = xml_part(archive, "word/settings.xml")
         validate_sections(document_xml)
         validate_page_geometry(document_xml)
         validate_styles(styles_xml)
+        validate_border_free_cover(styles_xml, document_xml)
         validate_tables(document_xml, expected["tables"])
         validate_figures(archive, document_xml, expected["figure_files"])
         validate_captions_and_bookmarks(document_xml, expected["captions"])
         validate_equations(document_xml)
         validate_markers(document_xml)
         validate_content_preservation(document_xml, expected)
-        validate_page_furniture(archive, document_xml)
+        validate_page_furniture(archive, document_xml, settings_xml)
     print(
         "Report DOCX validation passed: "
         f"{len(EXPECTED_SECTION_TITLES)} sections, {EXPECTED_TABLE_COUNT} tables, "

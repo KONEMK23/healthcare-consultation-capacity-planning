@@ -137,6 +137,31 @@ class DocxMutationTests(unittest.TestCase):
             finally:
                 validator.DOCX_PATH = original
 
+    def test_rejects_decorative_cover_rule(self) -> None:
+        def mutate(root):
+            title = root.xpath(
+                ".//w:p[w:pPr/w:pStyle[@w:val='Title']][1]", namespaces=NS
+            )[0]
+            properties = title.find("w:pPr", NS)
+            borders = etree.SubElement(properties, qname("pBdr"))
+            bottom = etree.SubElement(borders, qname("bottom"))
+            bottom.set(qname("val"), "single")
+            bottom.set(qname("sz"), "8")
+
+        self.assert_mutation_rejected(xml_mutator=mutate)
+
+    def test_rejects_missing_explicit_even_page_setting(self) -> None:
+        def mutate(payloads):
+            root = etree.fromstring(payloads["word/settings.xml"])
+            setting = root.find(".//w:evenAndOddHeaders", NS)
+            self.assertIsNotNone(setting)
+            setting.getparent().remove(setting)
+            payloads["word/settings.xml"] = etree.tostring(
+                root, xml_declaration=True, encoding="UTF-8", standalone=True
+            )
+
+        self.assert_mutation_rejected(media_mutator=mutate)
+
     def test_rejects_ordinary_body_text_substitution(self) -> None:
         def mutate(root):
             nodes = root.xpath(

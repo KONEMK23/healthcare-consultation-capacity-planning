@@ -426,6 +426,11 @@ def _configure_style_font(
         style.font.italic = italic
 
 
+def _remove_paragraph_borders(paragraph_properties) -> None:
+    for borders in list(paragraph_properties.findall(qn("w:pBdr"))):
+        paragraph_properties.remove(borders)
+
+
 def _configure_styles(document: DocumentObject) -> None:
     styles = document.styles
     normal = styles["Normal"]
@@ -482,6 +487,7 @@ def _configure_styles(document: DocumentObject) -> None:
     title.paragraph_format.space_before = Pt(0)
     title.paragraph_format.space_after = Pt(12)
     title.paragraph_format.keep_with_next = True
+    _remove_paragraph_borders(title._element.get_or_add_pPr())
 
     subtitle = styles["Subtitle"]
     _configure_style_font(
@@ -630,6 +636,7 @@ def _configure_real_bullet_style(document: DocumentObject) -> str:
 
 
 def _configure_page(document: DocumentObject) -> None:
+    document.settings.odd_and_even_pages_header_footer = True
     section = document.sections[0]
     section.page_width = Inches(PRESET["page_width_inches"])
     section.page_height = Inches(PRESET["page_height_inches"])
@@ -651,6 +658,16 @@ def _configure_page(document: DocumentObject) -> None:
         header_run, name=PRESET["body_font"], size_pt=9, color="6B7280"
     )
 
+    even_header = section.even_page_header
+    even_header.is_linked_to_previous = False
+    even_header_paragraph = even_header.paragraphs[0]
+    even_header_paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    even_header_paragraph.paragraph_format.space_after = Pt(0)
+    even_header_run = even_header_paragraph.add_run(RUNNING_HEADER)
+    _set_run_font(
+        even_header_run, name=PRESET["body_font"], size_pt=9, color="6B7280"
+    )
+
     first_header = section.first_page_header
     first_header.is_linked_to_previous = False
     first_header.paragraphs[0].text = ""
@@ -661,6 +678,13 @@ def _configure_page(document: DocumentObject) -> None:
     footer_paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     footer_paragraph.paragraph_format.space_after = Pt(0)
     _add_field(footer_paragraph, "PAGE", "2", font_name=PRESET["body_font"])
+
+    even_footer = section.even_page_footer
+    even_footer.is_linked_to_previous = False
+    even_footer_paragraph = even_footer.paragraphs[0]
+    even_footer_paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    even_footer_paragraph.paragraph_format.space_after = Pt(0)
+    _add_field(even_footer_paragraph, "PAGE", "2", font_name=PRESET["body_font"])
 
     first_footer = section.first_page_footer
     first_footer.is_linked_to_previous = False
@@ -713,6 +737,7 @@ def _add_editorial_cover(
 
     title_paragraph = document.add_paragraph(title, style="Title")
     title_paragraph.paragraph_format.keep_together = True
+    _remove_paragraph_borders(title_paragraph._p.get_or_add_pPr())
     subtitle = document.add_paragraph(
         "Operational Research Case Study", style="Subtitle"
     )
