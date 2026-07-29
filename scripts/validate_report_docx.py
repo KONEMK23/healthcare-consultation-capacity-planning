@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import posixpath
 import re
 import sys
 import zipfile
@@ -100,11 +102,15 @@ STYLE_IDS = {
 }
 ROOT = Path(__file__).resolve().parent.parent
 DOCX_PATH = ROOT / "report" / "MATH6186_case_study_draft.docx"
+SOURCE_PATH = ROOT / "report" / "MATH6186_case_study_draft.md"
+REFERENCE_PATH = ROOT / "report" / "references.json"
+FIGURE_DIR = ROOT / "outputs" / "figures"
 NS = {
     "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
     "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
     "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
     "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+    "pr": "http://schemas.openxmlformats.org/package/2006/relationships",
 }
 IDENTITY_TOKEN = re.compile(r"\[\[[^\[\]\r\n]+\]\]")
 PERMITTED_IDENTITY_TOKENS = {"[[STUDENT_NAME]]", "[[STUDENT_ID]]"}
@@ -139,6 +145,126 @@ def xml_part(archive: zipfile.ZipFile, name: str) -> etree._Element:
         fail(f"DOCX is missing required part: {name}")
         raise AssertionError("unreachable") from error
     return etree.fromstring(payload)
+
+
+def paragraph_text(paragraph: etree._Element) -> str:
+    return "".join(paragraph.xpath(".//w:t/text()", namespaces=NS))
+
+
+def paragraph_style(paragraph: etree._Element) -> str:
+    styles = paragraph.xpath("./w:pPr/w:pStyle/@w:val", namespaces=NS)
+    return styles[0] if styles else ""
+
+
+def validate_complex_field(
+    paragraph: etree._Element,
+    instruction: str,
+    cached_display: str,
+    label: str,
+) -> tuple[int, int]:
+    nodes = list(paragraph.iter())
+    positions = {id(node): index for index, node in enumerate(nodes)}
+    field_chars = paragraph.xpath(".//w:fldChar", namespaces=NS)
+    field_types = [
+        node.get(f"{{{NS['w']}}}fldCharType") for node in field_chars
+    ]
+    if field_types != ["begin", "separate", "end"]:
+        fail(f"{label} field chars must be ordered begin/separate/end: {field_types!r}")
+    begin_position, separate_position, end_position = [
+        positions[id(node)] for node in field_chars
+    ]
+    instructions = paragraph.xpath(".//w:instrText", namespaces=NS)
+    if len(instructions) != 1:
+        fail(f"{label} must contain exactly one field instruction.")
+    instruction_position = positions[id(instructions[0])]
+    if not begin_position < instruction_position < separate_position < end_position:
+        fail(f"{label} field instruction/result ordering is malformed.")
+    if " ".join((instructions[0].text or "").split()) != instruction:
+        fail(f"{label} field instruction must be {instruction!r}.")
+    result = "".join(
+        (node.text or "")
+        for node in paragraph.xpath(".//w:t", namespaces=NS)
+        if separate_position < positions[id(node)] < end_position
+    )
+    if result != cached_display:
+        fail(f"{label} cached display must be {cached_display!r}, found {result!r}.")
+    return begin_position, end_position
+
+
+def load_canonical_semantics() -> dict[str, object]:
+    try:
+        from scripts import build_report_docx as builder
+    except ImportError:
+        import build_report_docx as builder
+
+    source_text = SOURCE_PATH.read_text(encoding="utf-8")
+    lines = source_text.splitlines()
+    references = builder.load_references(REFERENCE_PATH)
+    summary = builder.load_summary(builder.SUMMARY_PATH)
+    title, metadata, body_start = builder._extract_cover(lines)
+    ordinary: list[str] = []
+    reference_texts: list[str] = []
+    captions: list[str] = []
+    figure_files: list[str] = []
+    for raw_line in lines[body_start:]:
+        line = raw_line
+        if not line or re.fullmatch(r"#{2,4}\s+.+", line):
+            continue
+        resolved = builder._resolve_values(line, summary)
+        equation = builder.EQUATION_PATTERN.fullmatch(resolved)
+        if equation or resolved in {"[[PARAMETER_TABLE]]", "[[POLICY_TABLE]]"}:
+            continue
+        figure = builder.FIGURE_PATTERN.fullmatch(resolved)
+        if figure:
+            filename, caption, _bookmark = builder.parse_figure_marker(resolved)
+            figure_files.append(filename)
+            captions.append(caption)
+            continue
+        bullet = re.fullmatch(r"-\s+(.+)", resolved)
+        if bullet:
+            item = bullet.group(1)
+            reference = builder.REFERENCE_PATTERN.fullmatch(item)
+            if reference:
+                item = builder.format_reference(references[reference.group(1)])
+                reference_texts.append(item)
+            ordinary.append(
+                "".join(
+                    text
+                    for text, _bold, _italic in builder.resolve_inline_markup(
+                        item, references
+                    )
+                )
+            )
+            continue
+        if resolved.startswith("`") and resolved.endswith("`"):
+            ordinary.append(resolved[1:-1])
+            continue
+        ordinary.append(
+            "".join(
+                text
+                for text, _bold, _italic in builder.resolve_inline_markup(
+                    resolved, references
+                )
+            )
+        )
+
+    expected_document = Document()
+    builder._add_parameter_table(expected_document)
+    builder._add_policy_table(expected_document, summary)
+    tables = [
+        [[cell.text for cell in row.cells] for row in table.rows]
+        for table in expected_document.tables
+    ]
+    return {
+        "title": title,
+        "subtitle": "Operational Research Case Study",
+        "metadata": [f"{label}: {value}" for label, value in metadata],
+        "ordinary": ordinary,
+        "references": reference_texts,
+        "captions": captions,
+        "figure_files": figure_files,
+        "tables": tables,
+    }
 
 
 def validate_sections(document_xml: etree._Element) -> None:
@@ -223,10 +349,21 @@ def validate_styles(styles_xml: etree._Element) -> None:
             )
 
 
-def validate_tables(document_xml: etree._Element) -> None:
+def validate_tables(
+    document_xml: etree._Element, expected_tables: list[list[list[str]]]
+) -> None:
     tables = document_xml.xpath(".//w:body/w:tbl", namespaces=NS)
     if len(tables) != EXPECTED_TABLE_COUNT:
         fail(f"Expected {EXPECTED_TABLE_COUNT} tables, found {len(tables)}.")
+    actual_tables = [
+        [
+            [paragraph_text(cell) for cell in row.xpath("./w:tc", namespaces=NS)]
+            for row in table.xpath("./w:tr", namespaces=NS)
+        ]
+        for table in tables
+    ]
+    if actual_tables != expected_tables:
+        fail("Table text does not match canonical parameters.csv/summary.csv content.")
     for index, table in enumerate(tables, start=1):
         properties = table.find("w:tblPr", NS)
         if properties is None:
@@ -236,6 +373,12 @@ def validate_tables(document_xml: etree._Element) -> None:
         require_attribute(width, "w", "9360", f"Table {index} width")
         require_attribute(
             properties.find("w:tblInd", NS), "w", "120", f"Table {index} indent"
+        )
+        require_attribute(
+            properties.find("w:tblInd", NS),
+            "type",
+            "dxa",
+            f"Table {index} indent type",
         )
         require_attribute(
             properties.find("w:tblLayout", NS),
@@ -249,6 +392,11 @@ def validate_tables(document_xml: etree._Element) -> None:
         ]
         if not grid_widths or sum(grid_widths) != 9360:
             fail(f"Table {index} grid widths must sum to 9360 DXA: {grid_widths!r}")
+        header_markers = table.xpath("./w:tr[1]/w:trPr/w:tblHeader", namespaces=NS)
+        if len(header_markers) != 1 or header_markers[0].get(
+            f"{{{NS['w']}}}val"
+        ) not in {"true", "1"}:
+            fail(f"Table {index} first row must be marked as a repeating header.")
         for row_number, row in enumerate(table.xpath("./w:tr", namespaces=NS), start=1):
             cells = row.xpath("./w:tc", namespaces=NS)
             if len(cells) != len(grid_widths):
@@ -266,6 +414,27 @@ def validate_tables(document_xml: etree._Element) -> None:
                     f"Table {index} row {row_number} cell width type",
                 )
                 cell_widths.append(int(tc_width.get(f"{{{NS['w']}}}w")))
+                margins = cell.find("w:tcPr/w:tcMar", NS)
+                expected_margins = {
+                    "top": "80",
+                    "bottom": "80",
+                    "start": "120",
+                    "end": "120",
+                }
+                for side, expected_width in expected_margins.items():
+                    margin = margins.find(f"w:{side}", NS) if margins is not None else None
+                    require_attribute(
+                        margin,
+                        "type",
+                        "dxa",
+                        f"Table {index} row {row_number} {side} cell-margin type",
+                    )
+                    require_attribute(
+                        margin,
+                        "w",
+                        expected_width,
+                        f"Table {index} row {row_number} {side} cell margin",
+                    )
             if cell_widths != grid_widths:
                 fail(
                     f"Table {index} row {row_number} cell widths {cell_widths!r} "
@@ -276,7 +445,9 @@ def validate_tables(document_xml: etree._Element) -> None:
 
 
 def validate_figures(
-    archive: zipfile.ZipFile, document_xml: etree._Element
+    archive: zipfile.ZipFile,
+    document_xml: etree._Element,
+    expected_figure_files: list[str],
 ) -> None:
     media = [
         name
@@ -291,6 +462,12 @@ def validate_figures(
         fail(f"Expected {EXPECTED_MEDIA_COUNT} inline drawings, found {len(inline)}.")
     if anchored:
         fail(f"Anchored drawings are prohibited; found {len(anchored)}.")
+    relationships = xml_part(archive, "word/_rels/document.xml.rels")
+    relationship_targets = {
+        relationship.get("Id"): relationship.get("Target")
+        for relationship in relationships.xpath(".//pr:Relationship", namespaces=NS)
+    }
+    actual_hashes: list[str] = []
     for index, drawing in enumerate(inline, start=1):
         extent = drawing.find("wp:extent", NS)
         if extent is None:
@@ -298,41 +475,82 @@ def validate_figures(
         width_emu = int(extent.get("cx", "0"))
         if width_emu <= 0 or width_emu > int(6.35 * 914400):
             fail(f"Figure {index} width is outside (0, 6.35] inches.")
+        blips = drawing.xpath(".//a:blip/@r:embed", namespaces=NS)
+        if len(blips) != 1 or blips[0] not in relationship_targets:
+            fail(f"Figure {index} has no unique resolvable image relationship.")
+        target = relationship_targets[blips[0]]
+        if not target:
+            fail(f"Figure {index} image relationship has no target.")
+        part_name = posixpath.normpath(posixpath.join("word", target))
+        try:
+            actual_hashes.append(hashlib.sha256(archive.read(part_name)).hexdigest())
+        except KeyError as error:
+            fail(f"Figure {index} image part is missing: {part_name}")
+            raise AssertionError("unreachable") from error
+    expected_hashes = [
+        hashlib.sha256((FIGURE_DIR / filename).read_bytes()).hexdigest()
+        for filename in expected_figure_files
+    ]
+    if actual_hashes != expected_hashes:
+        fail("Embedded image identities/order do not match the five canonical PNGs.")
 
 
-def validate_captions_and_bookmarks(document_xml: etree._Element) -> None:
+def validate_captions_and_bookmarks(
+    document_xml: etree._Element, expected_captions: list[str]
+) -> None:
     captions = document_xml.xpath(
         ".//w:body/w:p[w:pPr/w:pStyle[@w:val='Caption']]",
         namespaces=NS,
     )
     if len(captions) != EXPECTED_CAPTIONS:
         fail(f"Expected {EXPECTED_CAPTIONS} captions, found {len(captions)}.")
-    bookmark_names = {
-        element.get(f"{{{NS['w']}}}name")
-        for element in document_xml.xpath(".//w:bookmarkStart", namespaces=NS)
-    }
     expected_bookmarks = {f"fig{index}" for index in range(1, 6)}
-    if bookmark_names & expected_bookmarks != expected_bookmarks:
-        fail(
-            "Figure bookmarks must contain fig1-fig5; found "
-            f"{sorted(name for name in bookmark_names if name)}."
-        )
+    all_starts = document_xml.xpath(".//w:bookmarkStart", namespaces=NS)
+    all_ends = document_xml.xpath(".//w:bookmarkEnd", namespaces=NS)
+    figure_starts = [
+        start
+        for start in all_starts
+        if start.get(f"{{{NS['w']}}}name") in expected_bookmarks
+    ]
+    if len(figure_starts) != 5:
+        fail("Figure bookmarks must contain exactly one start for each fig1-fig5.")
+    names = [start.get(f"{{{NS['w']}}}name") for start in figure_starts]
+    if set(names) != expected_bookmarks or len(names) != len(set(names)):
+        fail("Figure bookmark starts must be unique fig1-fig5.")
+    end_ids = [end.get(f"{{{NS['w']}}}id") for end in all_ends]
     for index, caption in enumerate(captions, start=1):
-        text = "".join(caption.xpath(".//w:t/text()", namespaces=NS))
-        if text != f"Figure {index}. {text.partition('. ')[2]}":
-            fail(f"Caption {index} does not contain cached display text 'Figure {index}.'.")
-        instructions = [
-            value.strip()
-            for value in caption.xpath(".//w:instrText/text()", namespaces=NS)
-        ]
-        if not any(instruction == "SEQ Figure" for instruction in instructions):
-            fail(f"Caption {index} is missing a SEQ Figure field.")
+        text = paragraph_text(caption)
+        expected_text = f"Figure {index}. {expected_captions[index - 1]}"
+        if text != expected_text:
+            fail(
+                f"Caption {index} text must match its canonical marker: "
+                f"{expected_text!r}, found {text!r}."
+            )
         starts = caption.xpath(
-            f".//w:bookmarkStart[@w:name='fig{index}']", namespaces=NS
+            f"./w:bookmarkStart[@w:name='fig{index}']", namespaces=NS
         )
-        ends = caption.xpath(".//w:bookmarkEnd", namespaces=NS)
-        if len(starts) != 1 or not ends:
-            fail(f"Caption {index} does not contain its fig{index} bookmark.")
+        if len(starts) != 1:
+            fail(f"Caption {index} must contain exactly one fig{index} start.")
+        bookmark_id = starts[0].get(f"{{{NS['w']}}}id")
+        if not bookmark_id or end_ids.count(bookmark_id) != 1:
+            fail(f"Caption {index} bookmark must have one matching end ID.")
+        ends = caption.xpath(
+            f"./w:bookmarkEnd[@w:id='{bookmark_id}']", namespaces=NS
+        )
+        if len(ends) != 1:
+            fail(f"Caption {index} bookmark end must be in the same caption.")
+        begin_position, end_position = validate_complex_field(
+            caption, "SEQ Figure", str(index), f"Caption {index}"
+        )
+        children = list(caption.iter())
+        positions = {id(node): position for position, node in enumerate(children)}
+        if not (
+            positions[id(starts[0])]
+            < begin_position
+            < end_position
+            < positions[id(ends[0])]
+        ):
+            fail(f"Caption {index} bookmark must wrap the complete SEQ field.")
 
 
 def validate_equations(document_xml: etree._Element) -> None:
@@ -340,17 +558,24 @@ def validate_equations(document_xml: etree._Element) -> None:
         ".//w:body/w:p[w:pPr/w:pStyle[@w:val='Equation']]",
         namespaces=NS,
     )
-    equations = [
-        "\n".join(
-            "".join(run.xpath(".//w:t/text()", namespaces=NS))
-            for run in paragraph.xpath("./w:r", namespaces=NS)
-            if run.xpath(".//w:t", namespaces=NS)
-        )
-        for paragraph in equation_paragraphs
-    ]
-    equations = [re.sub(r"\n+", "\n", equation).strip() for equation in equations]
+    equations: list[str] = []
+    break_counts: list[int] = []
+    for paragraph in equation_paragraphs:
+        displayed: list[str] = []
+        breaks = 0
+        for run in paragraph.xpath("./w:r", namespaces=NS):
+            for node in run.iter():
+                if node.tag == f"{{{NS['w']}}}t":
+                    displayed.append(node.text or "")
+                elif node.tag == f"{{{NS['w']}}}br":
+                    displayed.append("\n")
+                    breaks += 1
+        equations.append("".join(displayed))
+        break_counts.append(breaks)
     if equations != EXPECTED_EQUATIONS:
         fail(f"Expected the four implemented equations exactly, found {equations!r}.")
+    if break_counts != [3, 0, 0, 0]:
+        fail(f"Equation line breaks must be actual w:br elements: {break_counts!r}.")
     for index, paragraph in enumerate(equation_paragraphs, start=1):
         require_attribute(
             paragraph.find("w:pPr/w:jc", NS),
@@ -379,12 +604,131 @@ def validate_markers(document_xml: etree._Element) -> None:
         )
 
 
+def validate_content_preservation(
+    document_xml: etree._Element, expected: dict[str, object]
+) -> None:
+    body_paragraphs = document_xml.xpath(".//w:body/w:p", namespaces=NS)
+    titles = [
+        paragraph_text(paragraph)
+        for paragraph in body_paragraphs
+        if paragraph_style(paragraph) == "Title"
+    ]
+    subtitles = [
+        paragraph_text(paragraph)
+        for paragraph in body_paragraphs
+        if paragraph_style(paragraph) == "Subtitle"
+    ]
+    metadata = [
+        paragraph_text(paragraph)
+        for paragraph in body_paragraphs
+        if paragraph_style(paragraph) == "CoverMetadata"
+    ]
+    if titles != [expected["title"]]:
+        fail("Cover title does not match the canonical Markdown title.")
+    if subtitles != [expected["subtitle"]]:
+        fail("Cover subtitle does not match the editorial-cover contract.")
+    if metadata != expected["metadata"]:
+        fail("Cover metadata does not match the canonical Markdown metadata.")
+
+    excluded_styles = {
+        "Title",
+        "Subtitle",
+        "CoverMetadata",
+        "Heading1",
+        "Heading2",
+        "Heading3",
+        "Equation",
+        "Caption",
+    }
+    ordinary = [
+        paragraph_text(paragraph)
+        for paragraph in body_paragraphs
+        if paragraph_style(paragraph) not in excluded_styles
+        and paragraph_text(paragraph)
+    ]
+    if ordinary != expected["ordinary"]:
+        for index, (actual, wanted) in enumerate(
+            zip(ordinary, expected["ordinary"]), start=1
+        ):
+            if actual != wanted:
+                fail(
+                    f"Ordinary body paragraph {index} differs from canonical content: "
+                    f"{actual!r} != {wanted!r}"
+                )
+        fail(
+            "Ordinary body paragraph count differs from canonical content: "
+            f"{len(ordinary)} != {len(expected['ordinary'])}."
+        )
+
+    references_heading = next(
+        (
+            index
+            for index, paragraph in enumerate(body_paragraphs)
+            if paragraph_style(paragraph) == "Heading1"
+            and paragraph_text(paragraph) == "References"
+        ),
+        None,
+    )
+    appendix_heading = next(
+        (
+            index
+            for index, paragraph in enumerate(body_paragraphs)
+            if paragraph_style(paragraph) == "Heading1"
+            and paragraph_text(paragraph) == "Appendix A. Reproducibility"
+        ),
+        None,
+    )
+    if references_heading is None or appendix_heading is None:
+        fail("References/Appendix boundaries are missing.")
+    reference_paragraphs = [
+        paragraph_text(paragraph)
+        for paragraph in body_paragraphs[references_heading + 1 : appendix_heading]
+        if paragraph_text(paragraph)
+    ]
+    if reference_paragraphs != expected["references"]:
+        fail("References do not match canonical references.json formatting/order.")
+
+
 def validate_page_furniture(
     archive: zipfile.ZipFile, document_xml: etree._Element
 ) -> None:
     section = document_xml.find(".//w:body/w:sectPr", NS)
     if section is None or section.find("w:titlePg", NS) is None:
         fail("The section must use a different first page to suppress cover furniture.")
+    relationship_root = xml_part(archive, "word/_rels/document.xml.rels")
+    relationships = {
+        relationship.get("Id"): relationship
+        for relationship in relationship_root.xpath(
+            ".//pr:Relationship", namespaces=NS
+        )
+    }
+
+    def referenced_parts(kind: str) -> dict[str, str]:
+        references = section.xpath(f"./w:{kind}Reference", namespaces=NS)
+        by_type: dict[str, str] = {}
+        for reference in references:
+            reference_type = reference.get(f"{{{NS['w']}}}type")
+            relationship_id = reference.get(f"{{{NS['r']}}}id")
+            if (
+                reference_type in by_type
+                or relationship_id not in relationships
+                or reference_type not in {"default", "first"}
+            ):
+                fail(f"Section {kind} references must be unique default/first pairs.")
+            relationship = relationships[relationship_id]
+            target = relationship.get("Target")
+            relationship_type = relationship.get("Type", "")
+            if not target or not relationship_type.endswith(f"/{kind}"):
+                fail(f"Section {kind} reference has the wrong relationship type.")
+            by_type[reference_type] = posixpath.normpath(
+                posixpath.join("word", target)
+            )
+        if set(by_type) != {"default", "first"}:
+            fail(f"Section must reference exactly default and first {kind} parts.")
+        return by_type
+
+    header_references = referenced_parts("header")
+    footer_references = referenced_parts("footer")
     header_parts = [
         name
         for name in archive.namelist()
@@ -397,36 +741,35 @@ def validate_page_furniture(
     ]
     if len(header_parts) != 2 or len(footer_parts) != 2:
         fail("Expected separate default and first-page header/footer parts.")
-    header_texts = [
-        "".join(xml_part(archive, name).xpath(".//w:t/text()", namespaces=NS))
-        for name in header_parts
-    ]
+    if set(header_parts) != set(header_references.values()):
+        fail("Header parts must be exactly those referenced by the section.")
+    if set(footer_parts) != set(footer_references.values()):
+        fail("Footer parts must be exactly those referenced by the section.")
+
+    default_header = xml_part(archive, header_references["default"])
+    first_header = xml_part(archive, header_references["first"])
     expected_header = "MATH6186 | Worried-Well Consultation Capacity"
-    if header_texts.count(expected_header) != 1 or header_texts.count("") != 1:
-        fail("Expected one running header and one blank first-page header.")
-    default_footer_found = False
-    blank_footer_found = False
-    for name in footer_parts:
-        footer = xml_part(archive, name)
-        text = "".join(footer.xpath(".//w:t/text()", namespaces=NS))
-        instructions = [
-            value.strip() for value in footer.xpath(".//w:instrText/text()", namespaces=NS)
-        ]
-        if text == "" and not instructions:
-            blank_footer_found = True
-        if "PAGE" in instructions:
-            paragraphs = footer.xpath(".//w:p", namespaces=NS)
-            if len(paragraphs) != 1:
-                fail("The page-number footer must contain exactly one paragraph.")
-            require_attribute(
-                paragraphs[0].find("w:pPr/w:jc", NS),
-                "val",
-                "right",
-                "Page-number footer alignment",
-            )
-            default_footer_found = True
-    if not default_footer_found or not blank_footer_found:
-        fail("Expected one right-aligned PAGE footer and one blank first-page footer.")
+    if "".join(default_header.xpath(".//w:t/text()", namespaces=NS)) != expected_header:
+        fail("Default running header text is incorrect.")
+    if first_header.xpath(".//w:t/text() | .//w:instrText/text()", namespaces=NS):
+        fail("First-page header must be blank.")
+
+    default_footer = xml_part(archive, footer_references["default"])
+    first_footer = xml_part(archive, footer_references["first"])
+    footer_paragraphs = default_footer.xpath(".//w:p", namespaces=NS)
+    if len(footer_paragraphs) != 1:
+        fail("The default page-number footer must contain exactly one paragraph.")
+    require_attribute(
+        footer_paragraphs[0].find("w:pPr/w:jc", NS),
+        "val",
+        "right",
+        "Page-number footer alignment",
+    )
+    validate_complex_field(footer_paragraphs[0], "PAGE", "2", "PAGE footer")
+    if first_footer.xpath(".//w:t/text() | .//w:instrText/text()", namespaces=NS):
+        fail("First-page footer must be blank.")
+    if first_footer.xpath(".//w:fldChar", namespaces=NS):
+        fail("First-page footer must not contain fields.")
 
 
 def main() -> None:
@@ -435,17 +778,19 @@ def main() -> None:
     if DOCX_PATH.stat().st_size == 0:
         fail(f"Empty DOCX: {DOCX_PATH.relative_to(ROOT)}")
     Document(DOCX_PATH)
+    expected = load_canonical_semantics()
     with zipfile.ZipFile(DOCX_PATH) as archive:
         document_xml = xml_part(archive, "word/document.xml")
         styles_xml = xml_part(archive, "word/styles.xml")
         validate_sections(document_xml)
         validate_page_geometry(document_xml)
         validate_styles(styles_xml)
-        validate_tables(document_xml)
-        validate_figures(archive, document_xml)
-        validate_captions_and_bookmarks(document_xml)
+        validate_tables(document_xml, expected["tables"])
+        validate_figures(archive, document_xml, expected["figure_files"])
+        validate_captions_and_bookmarks(document_xml, expected["captions"])
         validate_equations(document_xml)
         validate_markers(document_xml)
+        validate_content_preservation(document_xml, expected)
         validate_page_furniture(archive, document_xml)
     print(
         "Report DOCX validation passed: "

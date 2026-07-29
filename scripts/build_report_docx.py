@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import re
+from collections import Counter
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Sequence
 
 from docx import Document
 from docx.document import Document as DocumentObject
-from docx.enum.section import WD_SECTION
 from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
@@ -90,6 +91,13 @@ EQUATIONS = {
     "critical_fractile": ["tau = c_u/(c_u+c_o), q* = F_n^{-1}(tau)"],
 }
 XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
+CANONICAL_SOURCE_TEXT = DEFAULT_SOURCE.read_text(encoding="utf-8")
+CANONICAL_VALUE_MARKERS = frozenset(
+    match.group(0) for match in VALUE_PATTERN.finditer(CANONICAL_SOURCE_TEXT)
+)
+CANONICAL_FIGURE_MARKERS = frozenset(
+    match.group(0) for match in FIGURE_PATTERN.finditer(CANONICAL_SOURCE_TEXT)
+)
 
 
 def load_references(path: Path) -> dict[str, dict[str, object]]:
@@ -147,6 +155,8 @@ def resolve_value_marker(
     match = VALUE_PATTERN.fullmatch(marker)
     if not match:
         raise ValueError(f"Malformed VALUE marker: {marker}")
+    if marker not in CANONICAL_VALUE_MARKERS:
+        raise ValueError(f"Noncanonical VALUE marker: {marker}")
     scenario, column, output_format = match.groups()
     if scenario not in summary:
         raise ValueError(f"Unknown VALUE marker scenario: {scenario}")
@@ -155,6 +165,8 @@ def resolve_value_marker(
         raise ValueError(f"Unknown numeric VALUE marker column: {column}")
     try:
         value = float(row[column])
+        if not math.isfinite(value):
+            raise ValueError("VALUE marker resolved to a non-finite number.")
         return format(value, output_format)
     except (TypeError, ValueError) as error:
         raise ValueError(f"Invalid VALUE marker: {marker}") from error
@@ -166,6 +178,8 @@ def parse_figure_marker(marker: str) -> tuple[str, str, str]:
     match = FIGURE_PATTERN.fullmatch(marker)
     if not match:
         raise ValueError(f"Malformed FIGURE marker: {marker}")
+    if marker not in CANONICAL_FIGURE_MARKERS:
+        raise ValueError(f"Noncanonical FIGURE marker: {marker}")
     filename, caption, bookmark = (value.strip() for value in match.groups())
     if (
         Path(filename).name != filename
@@ -235,22 +249,103 @@ def resolve_inline_markup(
     if "[@" in paragraph:
         raise ValueError(f"Malformed citation marker remains: {paragraph}")
     paragraph = _normalize_inline_math(paragraph)
+    if paragraph.count("`") % 2:
+        raise ValueError(f"Unmatched inline-code delimiter: {paragraph}")
     pieces: list[tuple[str, bool, bool]] = []
     cursor = 0
-    markup = re.compile(r"\*\*([^*\r\n]+)\*\*|\*([^*\r\n]+)\*")
+    markup = re.compile(
+        r"\*\*([^*\r\n]+)\*\*|\*([^*\r\n]+)\*|`([^`\r\n]+)`"
+    )
     for match in markup.finditer(paragraph):
         if match.start() > cursor:
             pieces.append((paragraph[cursor : match.start()], False, False))
         if match.group(1) is not None:
             pieces.append((match.group(1), True, False))
-        else:
+        elif match.group(2) is not None:
             pieces.append((match.group(2), False, True))
+        else:
+            pieces.append((match.group(3), False, False))
         cursor = match.end()
     if cursor < len(paragraph):
         pieces.append((paragraph[cursor:], False, False))
-    if any("*" in text for text, _, _ in pieces):
+    if any("*" in text or "`" in text for text, _, _ in pieces):
         raise ValueError(f"Malformed or unsupported inline emphasis: {paragraph}")
     return [piece for piece in pieces if piece[0]]
+
+
+def validate_source_contract(
+    text: str,
+    references: dict[str, dict[str, object]],
+    summary: dict[str, dict[str, str]],
+) -> None:
+    """Reject anything outside the validated, canonical Markdown contract."""
+
+    for line_number, raw_line in enumerate(text.splitlines(), start=1):
+        if "\t" in raw_line:
+            raise ValueError(f"Tabs are unsupported on source line {line_number}.")
+        if raw_line and raw_line != raw_line.lstrip():
+            raise ValueError(
+                f"Indented or nested Markdown is unsupported on source line {line_number}."
+            )
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith((">", "```", "~~~")):
+            raise ValueError(f"Unsupported Markdown on source line {line_number}: {line}")
+        if re.match(r"^\d+[.)]\s+", line) or re.fullmatch(r"[-*_]{3,}", line):
+            raise ValueError(f"Unsupported Markdown on source line {line_number}: {line}")
+        if re.search(r"!?\[[^\]\r\n]+\]\([^)]+\)|~~", line):
+            raise ValueError(f"Unsupported Markdown on source line {line_number}: {line}")
+        if line.startswith("#") and not re.fullmatch(r"#{1,4}\s+\S.*", line):
+            raise ValueError(f"Malformed heading on source line {line_number}: {line}")
+        if line.startswith("-") and not re.fullmatch(r"-\s+\S.*", line):
+            raise ValueError(f"Malformed bullet on source line {line_number}: {line}")
+        if line.count("`") % 2:
+            raise ValueError(
+                f"Unmatched inline-code delimiter on source line {line_number}."
+            )
+
+    scrubbed = DOUBLE_BRACKET_PATTERN.sub("", text)
+    if "[[" in scrubbed or "]]" in scrubbed:
+        raise ValueError("Unmatched double-bracket marker delimiter in source.")
+    source_values = Counter(
+        match.group(0) for match in VALUE_PATTERN.finditer(text)
+    )
+    canonical_values = Counter(
+        match.group(0) for match in VALUE_PATTERN.finditer(CANONICAL_SOURCE_TEXT)
+    )
+    if source_values != canonical_values:
+        raise ValueError("Source VALUE markers do not match the canonical manuscript.")
+    source_figures = Counter(
+        match.group(0) for match in FIGURE_PATTERN.finditer(text)
+    )
+    canonical_figures = Counter(
+        match.group(0) for match in FIGURE_PATTERN.finditer(CANONICAL_SOURCE_TEXT)
+    )
+    if source_figures != canonical_figures:
+        raise ValueError("Source FIGURE markers do not match the canonical manuscript.")
+
+    try:
+        from scripts import validate_report_draft as draft_validator
+    except ImportError:
+        import validate_report_draft as draft_validator
+
+    reference_ids = set(references)
+    summary_rows = list(summary.values())
+    summary_columns = list(next(iter(summary_rows)).keys())
+    positions = draft_validator.heading_positions(text)
+    draft_validator.validate_figures(text)
+    draft_validator.validate_fixed_markers(text)
+    draft_validator.validate_citations_and_references(text, reference_ids)
+    draft_validator.validate_values(text, summary_columns, summary_rows)
+    draft_validator.validate_equations(text)
+    draft_validator.validate_marker_grammar(text)
+    draft_validator.validate_language(text)
+    word_count = draft_validator.count_main_text_words(text, positions)
+    if not 4_500 <= word_count <= 5_500:
+        raise ValueError(
+            f"Canonical main-text word count must be 4,500-5,500; found {word_count}."
+        )
 
 
 def _author_reference_text(authors: list[str]) -> str:
@@ -976,7 +1071,9 @@ def build_report(source: Path, output: Path) -> None:
 
     references = load_references(REFERENCE_PATH)
     summary = load_summary(SUMMARY_PATH)
-    source_lines = source.read_text(encoding="utf-8").splitlines()
+    source_text = source.read_text(encoding="utf-8")
+    validate_source_contract(source_text, references, summary)
+    source_lines = source_text.splitlines()
     title, metadata, body_start = _extract_cover(source_lines)
 
     document = Document()
@@ -999,7 +1096,7 @@ def build_report(source: Path, output: Path) -> None:
     policy_table_count = 0
     reference_marker_count = 0
     for raw_line in source_lines[body_start:]:
-        line = raw_line.strip()
+        line = raw_line
         if not line:
             continue
         heading_match = re.fullmatch(r"(#{2,4})\s+(.+)", line)
