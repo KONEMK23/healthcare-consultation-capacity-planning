@@ -44,15 +44,18 @@ Use Figures 1, 2, and 4 plus the peak-value columns in `summary.csv`.
 
 ### 7.2 Demand uncertainty
 
-Use Figure 3 and the uncertainty rows in `daily_metrics.csv`.
+Use Figure 3 for the baseline demand band, Figure 5 for uncertainty-cost
+sensitivity, and the uncertainty rows in `daily_metrics.csv` and `summary.csv`.
 
 ### 7.3 Cost and service-level sensitivity
 
-Use Figure 5 and the cost rows in `summary.csv`.
+Use Figure 5 and the cost rows in `daily_metrics.csv` and `summary.csv`.
 
 ### 7.4 Worried-well service-seeking and initial conditions
 
-Use the corresponding scenario groups in `summary.csv`.
+Use the service-seeking and initial-condition scenario rows in
+`daily_metrics.csv` for service demand and capacity, supported by aggregate
+policy costs in `summary.csv`.
 
 ### 7.5 Optimized policy versus mean-demand policy
 

@@ -16,8 +16,10 @@ def main(
     root = Path(output_root)
     data_dir = root / "data"
     figure_dir = root / "figures"
-    data_dir.mkdir(parents=True, exist_ok=True)
     outputs = run_all_experiments(in_sample, out_sample, seed)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    for stale_table in data_dir.glob("*.csv"):
+        stale_table.unlink()
     for name, table in outputs.items():
         table.to_csv(data_dir / f"{name}.csv", index=False)
     save_all_figures(outputs, figure_dir)

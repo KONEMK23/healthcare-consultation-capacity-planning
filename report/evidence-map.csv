@@ -1,9 +1,13 @@
 report_section,planned_claim,evidence_file,required_columns
 3,The ODE preserves total population,outputs/data/trajectories.csv,S;I_P;I_W;R_P;total
+3-4,Core model and demand assumptions have explicit sources or modelling-assumption provenance,outputs/data/parameters.csv,scenario;beta_p;beta_w;beta_wp;gamma_p;gamma_w;delta_p;population;p_infected;p_worried;model_structure_provenance;rate_parameter_provenance;service_demand_provenance
 7.1,Behaviour changes infected and worried-well peaks,outputs/data/summary.csv,peak_infected;peak_infected_day;peak_worried;peak_worried_day
 7.1,Worried-well pressure can exceed infection pressure early,outputs/figures/figure_2_risk_ratio.png,
 7.2,Demand uncertainty changes safety capacity,outputs/data/daily_metrics.csv,scenario;mean_demand;optimized_capacity;demand_p05;demand_p95
+7.2,Uncertainty changes optimized expected cost across behavioural regimes,outputs/figures/figure_5_sensitivity.png,
 7.3,Shortage cost changes optimized capacity and expected cost,outputs/data/daily_metrics.csv,scenario;optimized_capacity;optimized_expected_cost
+7.3,Shortage-cost sensitivity changes the value of optimized planning,outputs/figures/figure_5_sensitivity.png,
 7.4,Worried-well service seeking changes consultation demand,outputs/data/daily_metrics.csv,scenario;mean_demand
+7.4,Initial infected and worried-well fractions change demand and optimized capacity,outputs/data/daily_metrics.csv,scenario;mean_demand;optimized_capacity
 7.5,Policy comparison quantifies the cost difference from mean planning,outputs/data/summary.csv,optimized_total_cost;mean_policy_total_cost;relative_cost_reduction_pct
-8,Results are synthetic scenario analysis,outputs/data/parameters.csv,in_sample_seed;out_sample_seed;in_sample;out_sample
+8,Results are synthetic scenario analysis,outputs/data/parameters.csv,scenario;in_sample_seed;out_sample_seed;in_sample;out_sample;service_demand_provenance;uncertainty_provenance;cost_provenance

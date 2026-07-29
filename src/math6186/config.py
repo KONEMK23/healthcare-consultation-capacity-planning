@@ -1,5 +1,32 @@
 from dataclasses import dataclass
-from math import isclose
+from math import isclose, isfinite
+from numbers import Integral, Real
+
+import numpy as np
+
+
+def _finite_real(name: str, value: object) -> float:
+    if isinstance(value, (bool, np.bool_)) or not isinstance(
+        value, (Real, np.integer, np.floating)
+    ):
+        raise ValueError(f"{name} must be a finite real number.")
+    normalized = float(value)
+    if not isfinite(normalized):
+        raise ValueError(f"{name} must be a finite real number.")
+    return normalized
+
+
+def _integer(name: str, value: object, *, positive: bool) -> int:
+    if isinstance(value, (bool, np.bool_)) or not isinstance(
+        value, (Integral, np.integer)
+    ):
+        qualifier = "positive" if positive else "non-negative"
+        raise ValueError(f"{name} must be a {qualifier} integer.")
+    normalized = int(value)
+    if (positive and normalized <= 0) or (not positive and normalized < 0):
+        qualifier = "positive" if positive else "non-negative"
+        raise ValueError(f"{name} must be a {qualifier} integer.")
+    return normalized
 
 
 @dataclass(frozen=True)
@@ -14,24 +41,30 @@ class ModelParameters:
     initial_state: tuple[float, float, float, float] = (0.98, 0.01, 0.01, 0.0)
 
     def __post_init__(self) -> None:
-        rates = (
-            self.beta_p,
-            self.beta_w,
-            self.beta_wp,
-            self.gamma_p,
-            self.gamma_w,
-            self.delta_p,
-        )
-        if any(rate < 0.0 for rate in rates):
-            raise ValueError("Transition rates must be non-negative.")
-        if self.alpha <= 0.0:
+        for name in ("beta_p", "beta_w", "beta_wp", "gamma_p", "gamma_w", "delta_p"):
+            value = _finite_real(name, getattr(self, name))
+            if value < 0.0:
+                raise ValueError(f"{name} must be non-negative.")
+            object.__setattr__(self, name, value)
+        alpha = _finite_real("alpha", self.alpha)
+        if alpha <= 0.0:
             raise ValueError("alpha must be positive.")
-        if len(self.initial_state) != 4:
+        object.__setattr__(self, "alpha", alpha)
+        try:
+            state = tuple(self.initial_state)
+        except TypeError as exc:
+            raise ValueError("initial_state must contain four finite real values.") from exc
+        if len(state) != 4:
             raise ValueError("initial_state must contain four values.")
-        if any(value < 0.0 or value > 1.0 for value in self.initial_state):
-            raise ValueError("Initial fractions must lie in [0, 1].")
-        if not isclose(sum(self.initial_state), 1.0, abs_tol=1e-12):
+        normalized_state = tuple(
+            _finite_real(f"initial_state[{index}]", value)
+            for index, value in enumerate(state)
+        )
+        if any(value < 0.0 or value > 1.0 for value in normalized_state):
+            raise ValueError("initial_state fractions must lie in [0, 1].")
+        if not isclose(sum(normalized_state), 1.0, abs_tol=1e-12):
             raise ValueError("Initial fractions must sum to one.")
+        object.__setattr__(self, "initial_state", normalized_state)
 
 
 @dataclass(frozen=True)
@@ -44,16 +77,28 @@ class DemandParameters:
     seed: int = 6_186
 
     def __post_init__(self) -> None:
-        if self.population <= 0 or self.scenarios <= 0:
-            raise ValueError("population and scenarios must be positive.")
-        if not 0.0 <= self.p_infected <= 1.0:
+        population = _integer("population", self.population, positive=True)
+        scenarios = _integer("scenarios", self.scenarios, positive=True)
+        seed = _integer("seed", self.seed, positive=False)
+        p_infected = _finite_real("p_infected", self.p_infected)
+        p_worried = _finite_real("p_worried", self.p_worried)
+        coefficient_of_variation = _finite_real(
+            "coefficient_of_variation", self.coefficient_of_variation
+        )
+        if not 0.0 <= p_infected <= 1.0:
             raise ValueError("p_infected must lie in [0, 1].")
-        if not 0.0 <= self.p_worried <= 1.0:
+        if not 0.0 <= p_worried <= 1.0:
             raise ValueError("p_worried must lie in [0, 1].")
-        if not 0.0 < self.coefficient_of_variation <= 1.0:
+        if not 0.0 < coefficient_of_variation <= 1.0:
             raise ValueError("coefficient_of_variation must lie in (0, 1].")
-        if self.seed < 0:
-            raise ValueError("seed must be non-negative.")
+        object.__setattr__(self, "population", population)
+        object.__setattr__(self, "scenarios", scenarios)
+        object.__setattr__(self, "seed", seed)
+        object.__setattr__(self, "p_infected", p_infected)
+        object.__setattr__(self, "p_worried", p_worried)
+        object.__setattr__(
+            self, "coefficient_of_variation", coefficient_of_variation
+        )
 
 
 @dataclass(frozen=True)
@@ -62,9 +107,18 @@ class NewsvendorCosts:
     overage: float = 1.0
 
     def __post_init__(self) -> None:
-        if self.underage <= 0.0 or self.overage <= 0.0:
-            raise ValueError("underage and overage costs must be positive.")
+        underage = _finite_real("underage", self.underage)
+        overage = _finite_real("overage", self.overage)
+        if underage <= 0.0:
+            raise ValueError("underage must be positive.")
+        if overage <= 0.0:
+            raise ValueError("overage must be positive.")
+        object.__setattr__(self, "underage", underage)
+        object.__setattr__(self, "overage", overage)
 
     @property
     def critical_fractile(self) -> float:
-        return self.underage / (self.underage + self.overage)
+        if self.underage >= self.overage:
+            return 1.0 / (1.0 + self.overage / self.underage)
+        ratio = self.underage / self.overage
+        return ratio / (1.0 + ratio)

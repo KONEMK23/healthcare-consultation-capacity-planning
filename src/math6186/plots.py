@@ -35,6 +35,8 @@ def save_all_figures(
     """Save the five figures supporting the consultation-capacity analysis."""
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)
+    for stale_figure in destination.glob("*.png"):
+        stale_figure.unlink()
     trajectories = outputs["trajectories"]
     daily = outputs["daily_metrics"]
     summary = outputs["summary"]
@@ -83,6 +85,10 @@ def save_all_figures(
         label="Deterministic demand",
     )
     axis3.set(xlabel="Day", ylabel="Consultation demand")
+    axis3.set_title(
+        "Daily demand uncertainty — default behaviour\n"
+        r"$\alpha=1$; CV=0.15; $p_P=1.00$, $p_W=0.50$"
+    )
     axis3.legend(frameon=False)
     path3 = _finish(fig3, destination / "figure_3_demand_uncertainty.png")
 
@@ -95,16 +101,25 @@ def save_all_figures(
             label=BEHAVIOUR_LABELS[scenario],
         )
     axis4.set(xlabel="Day", ylabel="Optimal consultation capacity")
+    axis4.set_title(
+        "Optimized capacity by behaviour\n"
+        r"CV=0.15; $c_u=5$, $c_o=1$; $p_P=1.00$, $p_W=0.50$"
+    )
     axis4.legend(frameon=False)
     path4 = _finish(fig4, destination / "figure_4_optimal_capacity.png")
 
     sensitivity = summary[summary["group"].isin(["uncertainty", "cost"])].merge(
-        outputs["parameters"][["name", "alpha", "cv", "underage"]],
-        left_on="scenario",
-        right_on="name",
+        outputs["parameters"][["scenario", "alpha", "cv", "underage"]],
+        on="scenario",
         how="left",
     )
     fig5, axes5 = plt.subplots(1, 2, figsize=(10, 4))
+    fig5.suptitle(
+        "Uncertainty and cost sensitivity\n"
+        r"Left: $\alpha\in\{0.5,1,2\}$, $c_u/c_o=5/1$; "
+        r"right: $\alpha=1$, CV=0.15; $p_P=1.00$, $p_W=0.50$",
+        fontsize=11,
+    )
     uncertainty = sensitivity[sensitivity["group"] == "uncertainty"]
     for alpha, frame in uncertainty.groupby("alpha"):
         ordered = frame.sort_values("cv")

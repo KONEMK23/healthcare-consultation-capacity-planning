@@ -52,7 +52,10 @@ def generate_scenarios(
 
     coefficient_of_variation = params.coefficient_of_variation
     location_in_sd = _standardized_location(coefficient_of_variation)
-    rng = np.random.default_rng(params.seed)
+    draw_rng = np.random.default_rng(params.seed)
+    integerization_rng = np.random.default_rng(
+        np.random.SeedSequence([params.seed, 0x4D415448])
+    )
     for row_index in np.flatnonzero(positive):
         requested_mean = requested_means[row_index]
         scale = coefficient_of_variation * requested_mean
@@ -63,7 +66,12 @@ def generate_scenarios(
             loc=location,
             scale=scale,
             size=params.scenarios,
-            random_state=rng,
+            random_state=draw_rng,
         )
-        output[row_index] = np.maximum(0, np.rint(draws)).astype(np.int64)
+        if not np.isfinite(draws).all() or (draws >= float(2**63)).any():
+            raise ValueError("Generated demand exceeds the supported integer range.")
+        integer_parts = np.floor(draws).astype(np.int64)
+        fractional_parts = draws - integer_parts
+        round_up = integerization_rng.random(params.scenarios) < fractional_parts
+        output[row_index] = integer_parts + round_up.astype(np.int64)
     return output

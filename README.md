@@ -6,11 +6,16 @@ a repeated single-period newsvendor capacity problem.
 
 ## Setup
 
+Use Python 3.11 or newer:
+
 ```powershell
-& "D:\ProgramData\anaconda3\python.exe" -m venv .venv
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[test]"
 ```
+
+The analysis was also tested with an Anaconda Python 3.12 interpreter; activate
+the corresponding Conda environment before running the same install command.
 
 ## Verify
 
@@ -27,6 +32,9 @@ python scripts/run_analysis.py
 The command writes CSV evidence to `outputs/data` and figures to
 `outputs/figures`. Every experiment uses synthetic data and a recorded random
 seed; outputs are scenario analysis rather than real-world forecasts.
+Continuous demand draws are converted to appointment counts with seeded
+stochastic rounding, which preserves the requested mean without silently
+rounding small positive means to zero.
 
 ## Report evidence
 

@@ -33,3 +33,17 @@ def test_truncated_distribution_preserves_requested_mean():
     )
     draws = generate_scenarios(means, params)[0]
     assert draws.mean() == pytest.approx(1_000.0, rel=0.01)
+
+
+@pytest.mark.parametrize("requested_mean", [0.1, 0.4])
+def test_integerization_preserves_small_positive_means(requested_mean):
+    params = DemandParameters(
+        coefficient_of_variation=0.15,
+        scenarios=100_000,
+        seed=123,
+    )
+
+    draws = generate_scenarios(np.array([requested_mean]), params)[0]
+
+    assert draws.mean() == pytest.approx(requested_mean, abs=0.005)
+    assert np.count_nonzero(draws) > 0

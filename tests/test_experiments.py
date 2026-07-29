@@ -85,9 +85,33 @@ def test_run_all_experiments_returns_traceable_tables():
     ].notna().all().all()
     for table_name in ("trajectories", "daily_metrics", "summary"):
         assert {"scenario", "group"} <= set(outputs[table_name].columns)
-    assert {"name", "group", "in_sample_seed", "out_sample_seed"} <= set(
+    assert {
+        "scenario",
+        "group",
+        "beta_p",
+        "beta_w",
+        "beta_wp",
+        "gamma_p",
+        "gamma_w",
+        "delta_p",
+        "population",
+        "p_infected",
+        "model_structure_provenance",
+        "behaviour_provenance",
+        "rate_parameter_provenance",
+        "initial_condition_provenance",
+        "service_demand_provenance",
+        "uncertainty_provenance",
+        "cost_provenance",
+    } <= set(
         outputs["parameters"].columns
     )
+    assert "name" not in outputs["parameters"].columns
+    assert set(outputs["parameters"]["scenario"]) == set(outputs["summary"]["scenario"])
+    provenance = outputs["parameters"].filter(like="provenance")
+    assert not provenance.empty
+    assert provenance.notna().all().all()
+    assert (provenance != "").all().all()
     assert set(outputs["parameters"]["in_sample_seed"]) == {6_186}
     assert set(outputs["parameters"]["out_sample_seed"]) == {6_187}
 
