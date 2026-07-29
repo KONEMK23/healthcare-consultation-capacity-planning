@@ -1,0 +1,9 @@
+report_section,planned_claim,evidence_file,required_columns
+3,The ODE preserves total population,outputs/data/trajectories.csv,S;I_P;I_W;R_P;total
+7.1,Behaviour changes infected and worried-well peaks,outputs/data/summary.csv,peak_infected;peak_infected_day;peak_worried;peak_worried_day
+7.1,Worried-well pressure can exceed infection pressure early,outputs/figures/figure_2_risk_ratio.png,
+7.2,Demand uncertainty changes safety capacity,outputs/data/daily_metrics.csv,scenario;mean_demand;optimized_capacity;demand_p05;demand_p95
+7.3,Shortage cost changes optimized capacity and expected cost,outputs/data/daily_metrics.csv,scenario;optimized_capacity;optimized_expected_cost
+7.4,Worried-well service seeking changes consultation demand,outputs/data/daily_metrics.csv,scenario;mean_demand
+7.5,Policy comparison quantifies the cost difference from mean planning,outputs/data/summary.csv,optimized_total_cost;mean_policy_total_cost;relative_cost_reduction_pct
+8,Results are synthetic scenario analysis,outputs/data/parameters.csv,in_sample_seed;out_sample_seed;in_sample;out_sample
