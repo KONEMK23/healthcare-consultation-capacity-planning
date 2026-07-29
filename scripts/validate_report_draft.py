@@ -30,6 +30,13 @@ REQUIRED_FIGURES = [
     "figure_4_optimal_capacity.png",
     "figure_5_sensitivity.png",
 ]
+REQUIRED_VALUE_MARKERS = [
+    "[[VALUE:behaviour_alpha_1|optimized_total_cost|,.1f]]",
+    "[[VALUE:behaviour_alpha_1|mean_policy_total_cost|,.1f]]",
+    "[[VALUE:behaviour_alpha_1|relative_cost_reduction_pct|.2f]]",
+    "[[VALUE:cost_cu_1_co_1|relative_cost_reduction_pct|.4f]]",
+    "[[VALUE:cost_cu_10_co_1|relative_cost_reduction_pct|.2f]]",
+]
 PERMITTED_IDENTITY_TOKENS = {"[[STUDENT_NAME]]", "[[STUDENT_ID]]"}
 PERMITTED_EQUATIONS = {
     "compartment_system",
@@ -37,6 +44,28 @@ PERMITTED_EQUATIONS = {
     "sample_average_cost",
     "critical_fractile",
 }
+FIGURE_TOPIC_PATTERNS = {
+    "figure_1_compartments.png": (r"\bcompartments?\b", r"\bbehaviou?r", r"\bpeak"),
+    "figure_2_risk_ratio.png": (r"\bratio\b", r"\bworried-well\b", r"\binfect"),
+    "figure_3_demand_uncertainty.png": (r"\bdemand\b", r"\bband\b", r"\buncert"),
+    "figure_4_optimal_capacity.png": (r"\bcapacity\b", r"\bbehaviou?r", r"\b(?:crest|peak)"),
+    "figure_5_sensitivity.png": (r"\bcost\b", r"\bpanel\b", r"\b(?:underage|overage)"),
+}
+FIGURE_READING_PATTERN = re.compile(
+    r"\b(?:read|reading|shows?|displayed|figure|lines?|panel|ratio|band|curves?|paths?)\b",
+    re.IGNORECASE,
+)
+FIGURE_TAKEAWAY_PATTERN = re.compile(
+    r"\b(?:means?|meaning|changes?|produces?|higher|lower|earlier|later|"
+    r"increases?|decreases?|exceeds?|remains?|rises?|falls?)\b",
+    re.IGNORECASE,
+)
+FIGURE_QUALIFICATION_PATTERN = re.compile(
+    r"\b(?:therefore|implication|should|need|useful|limit(?:ed|ation)?|not|"
+    r"rather|only|assum(?:ed|ption)|synthetic|conditional|depends?|concerns?|"
+    r"finite-sample|single|no)\b",
+    re.IGNORECASE,
+)
 ROOT = Path(__file__).resolve().parent.parent
 REPORT_PATH = ROOT / "report" / "MATH6186_case_study_draft.md"
 REFERENCE_PATH = ROOT / "report" / "references.json"
@@ -132,6 +161,36 @@ def validate_figures(text: str) -> None:
     actual_pairs = [(match.group(1), match.group(3)) for match in matches]
     if actual_pairs != expected_pairs:
         fail("Figure markers must appear in order and use the corresponding bookmark.")
+    paragraphs = re.split(r"(?:\r?\n\s*){2,}", text)
+    for match in matches:
+        marker = match.group(0)
+        marker_blocks = [
+            index for index, paragraph in enumerate(paragraphs) if marker in paragraph
+        ]
+        if len(marker_blocks) != 1:
+            fail(f"Figure marker must occupy one identifiable block: {match.group(1)}")
+        marker_index = marker_blocks[0]
+        adjacent = [
+            paragraphs[index]
+            for index in (marker_index - 1, marker_index + 1)
+            if 0 <= index < len(paragraphs)
+            and not paragraphs[index].lstrip().startswith("#")
+            and "[[FIGURE:" not in paragraphs[index]
+        ]
+        topics = FIGURE_TOPIC_PATTERNS[match.group(1)]
+        substantive = any(
+            len(WORD_PATTERN.findall(paragraph)) >= 50
+            and all(re.search(topic, paragraph, re.IGNORECASE) for topic in topics)
+            and FIGURE_READING_PATTERN.search(paragraph)
+            and FIGURE_TAKEAWAY_PATTERN.search(paragraph)
+            and FIGURE_QUALIFICATION_PATTERN.search(paragraph)
+            for paragraph in adjacent
+        )
+        if not substantive:
+            fail(
+                "Figure must have an adjacent substantive interpretation covering "
+                f"how to read it, its takeaway, and an implication or caveat: {match.group(1)}"
+            )
 
 
 def validate_fixed_markers(text: str) -> None:
@@ -151,9 +210,26 @@ def validate_citations_and_references(text: str, reference_ids: set[str]) -> Non
     missing_citations = reference_ids - set(citation_ids)
     if missing_citations:
         fail("Uncited reference IDs: " + ", ".join(sorted(missing_citations)))
-    reference_markers = REFERENCE_PATTERN.findall(text)
-    if len(reference_markers) != len(reference_ids) or set(reference_markers) != reference_ids:
-        fail("References must contain one [[REFERENCE:<id>]] marker per citation key.")
+    positions = heading_positions(text)
+    reference_start = positions["References"]
+    appendix_start = positions["Appendix A. Reproducibility"]
+    reference_section = text[reference_start:appendix_start]
+    outside_references = text[:reference_start] + text[appendix_start:]
+    if REFERENCE_PATTERN.search(outside_references):
+        fail("REFERENCE markers are permitted only inside the References section.")
+    list_item_pattern = re.compile(
+        r"^\s*-\s+\[\[REFERENCE:([a-z0-9_]+)\]\]\s*$",
+        flags=re.MULTILINE,
+    )
+    list_item_ids = list_item_pattern.findall(reference_section)
+    all_section_ids = REFERENCE_PATTERN.findall(reference_section)
+    if all_section_ids != list_item_ids:
+        fail("Every REFERENCE marker must be a standalone list item.")
+    if len(list_item_ids) != len(reference_ids) or set(list_item_ids) != reference_ids:
+        fail(
+            "References must contain exactly one list-item "
+            "[[REFERENCE:<id>]] marker per citation key."
+        )
 
 
 def validate_values(
@@ -161,6 +237,9 @@ def validate_values(
     summary_columns: list[str],
     summary_rows: list[dict[str, str]],
 ) -> None:
+    for marker in REQUIRED_VALUE_MARKERS:
+        if text.count(marker) != 1:
+            fail(f"Required VALUE marker must appear exactly once: {marker}")
     for scenario, column, output_format in VALUE_PATTERN.findall(text):
         rows = [row for row in summary_rows if row.get("scenario") == scenario]
         if len(rows) != 1:
@@ -209,16 +288,33 @@ def validate_marker_grammar(text: str) -> None:
 
 
 def validate_language(text: str) -> None:
-    prohibited = {
-        r"\bforecasts?\b": "forecast",
-        r"\bpredictions?\b": "prediction",
-        r"\bobserved demand\b": "observed demand",
-        r"\bpatient data\b": "patient data",
-        r"\bclinically calibrated results\b": "clinically calibrated results",
-    }
-    for pattern, label in prohibited.items():
-        if re.search(pattern, text, flags=re.IGNORECASE):
-            fail(f"Prohibited output characterization found: {label}")
+    prohibited = (
+        (r"\bforecast(?:s|ed|ing)?\b", "forecast language"),
+        (
+            r"\bprediction(?:s)?\b|\bpredictive\s+(?:estimates?|outputs?|results?)\b",
+            "predictive language",
+        ),
+        (
+            r"\bobserved\s+(?:consultation\s+)?demand\b",
+            "observed demand",
+        ),
+        (r"\bpatient\s+(?:data|observations?)\b", "patient data or observations"),
+        (
+            r"\bclinically\s+calibrat(?:ed|ing)\b"
+            r"(?:\s+(?:results?|estimates?|outputs?))?",
+            "clinically calibrated language",
+        ),
+    )
+    for pattern, label in prohibited:
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+            prefix = text[max(0, match.start() - 48) : match.start()]
+            explicitly_negated = re.search(
+                r"\b(?:not|never|no)\b[^.!?;\r\n]{0,32}$",
+                prefix,
+                flags=re.IGNORECASE,
+            )
+            if not explicitly_negated:
+                fail(f"Prohibited output characterization found: {label}")
 
 
 def count_main_text_words(text: str, positions: dict[str, int]) -> int:
