@@ -39,3 +39,36 @@ def test_daily_policy_metrics_have_expected_values():
     result = evaluate_daily_policy(demand, capacities, NewsvendorCosts(5.0, 1.0))
     assert result.loc[0, "shortage_probability"] == pytest.approx(1.0 / 3.0)
     assert result.loc[1, "expected_cost"] == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize(
+    ("optimizer", "demand"),
+    [
+        (sample_cost, np.array([1.5])),
+        (optimal_capacity, np.array([1.5])),
+        (enumerated_optimum, np.array([1.5])),
+    ],
+)
+def test_sample_functions_reject_fractional_demand(optimizer, demand):
+    costs = NewsvendorCosts()
+    if optimizer is sample_cost:
+        with pytest.raises(ValueError, match="integers"):
+            optimizer(demand, 1, costs)
+    else:
+        with pytest.raises(ValueError, match="integers"):
+            optimizer(demand, costs)
+
+
+def test_daily_policy_rejects_fractional_demand():
+    with pytest.raises(ValueError, match="integers"):
+        evaluate_daily_policy(np.array([[1.5]]), np.array([1]), NewsvendorCosts())
+
+
+def test_sample_cost_rejects_fractional_capacity():
+    with pytest.raises(ValueError, match="integer"):
+        sample_cost(np.array([1]), 1.5, NewsvendorCosts())
+
+
+def test_daily_policy_rejects_fractional_capacity():
+    with pytest.raises(ValueError, match="integers"):
+        evaluate_daily_policy(np.array([[1]]), np.array([1.5]), NewsvendorCosts())
