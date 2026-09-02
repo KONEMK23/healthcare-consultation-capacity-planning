@@ -38,9 +38,9 @@ The Singh and Gromov framework makes behavioural scenario analysis possible, but
 
 ### Outbreak resources and timing
 
-Resource scarcity during outbreaks has been studied through other operational decisions. Singh and Rebennack examine whether scarce therapeutic resources should be released immediately or sequentially, connecting epidemic timing to resource allocation [@singh_rebennack_2025]. The relevance here is the general principle that when demand and health states vary over time, the timing of a resource decision matters. Daily consultation slots similarly need to follow changing pressure rather than being set from a horizon-wide average. Nevertheless, therapeutic release is a different decision from reserving consultation capacity. It involves allocation over time and scarcity of a treatment stock, whereas this project repeats a single-period capacity decision each day. The paper therefore motivates temporal operational reasoning but does not validate the newsvendor formulation, demand assumptions, or cost parameters used below.
+Resource scarcity during outbreaks has been studied through other operational decisions. Singh and Rebennack examine whether scarce therapeutic resources should be released immediately or sequentially, connecting epidemic timing to resource allocation [@singh_rebennack_2026]. The relevance here is the general principle that when demand and health states vary over time, the timing of a resource decision matters. Daily consultation slots similarly need to follow changing pressure rather than being set from a horizon-wide average. Nevertheless, therapeutic release is a different decision from reserving consultation capacity. It involves allocation over time and scarcity of a treatment stock, whereas this project repeats a single-period capacity decision each day. The paper therefore motivates temporal operational reasoning but does not validate the newsvendor formulation, demand assumptions, or cost parameters used below.
 
-This distinction prevents two resource questions from being conflated. A release policy asks when and to whom a finite stock should be deployed, potentially carrying resource availability between periods. The model in this report asks how many units of a pooled service to schedule for one day, with no carry-over of unused capacity. The daily decisions form a time-indexed sequence because the demand distribution changes, not because inventory is transferred across days. The implication is that the resulting capacity curve should be read as a set of repeated operating targets. It does not describe a stock-allocation trajectory or a multi-period scheduling programme.
+This distinction prevents two resource questions from being conflated. A release policy asks when and to whom a finite stock should be deployed, potentially carrying resource availability between periods. The model in this report asks how many units of a pooled service to schedule for one day, with no carry-over of unused capacity. The daily decisions form a time-indexed sequence because the demand distribution changes, not because inventory is transferred across days. The implication is that the resulting capacity curve should be read as a set of repeated operating targets. It does not describe a stock-allocation trajectory or a multi-period scheduling programme. This scoped abstraction should be viewed alongside broader surge-capacity planning, which emphasizes scalable and flexible responses across facilities and communities when routine resources are exceeded [@hick_2004].
 
 ### Stochastic demand and the newsvendor connection
 
@@ -48,9 +48,11 @@ Once infected and worried-well states are translated into requests, realized wor
 
 The review also makes clear that newsvendor research extends far beyond the simple form used here. The current project deliberately adopts one pooled resource, one uncertain demand quantity per day, linear mismatch costs, and a single-period decision. It does not model multiple service classes, substitution, queues, workforce shifts, appointment carry-over, or learning between days. Qin et al. therefore support the classical decision principle, not every contextual assumption. The costs, stochastic coefficient of variation, integerization procedure, and evaluation design remain project choices documented in the evidence record.
 
+Stochastic epidemic modelling can instead introduce randomness within the state-transition process itself, for example through continuous-time Markov chains or stochastic differential equations [@allen_2017]. The present study adopts a narrower coursework extension: it retains the literature-derived deterministic compartment trajectories and places uncertainty in the downstream consultation-demand scenarios. This choice keeps the newsvendor input transparent while avoiding any claim that epidemiological parameter uncertainty has been estimated.
+
 ### Synthesis and gap
 
-The literature supplies complementary pieces but not the complete decision chain. Worried-well and outbreak-anxiety research establishes why non-infected concern matters; interacting-process models provide a dynamic representation; outbreak-resource work emphasizes timing; and the newsvendor literature supplies a tractable stochastic capacity rule. None of the six sources directly converts four-compartment worried-well trajectories into optimized daily consultation capacity. This report fills that modelling gap for a coursework case study by linking the components transparently.
+The literature supplies complementary pieces but not the complete decision chain. Worried-well and outbreak-anxiety research establishes why non-infected concern matters; interacting-process models provide a dynamic representation; outbreak-resource work emphasizes timing; and the newsvendor literature supplies a tractable stochastic capacity rule. None of these sources directly converts four-compartment worried-well trajectories into optimized daily consultation capacity. This report fills that modelling gap for a coursework case study by linking the components transparently.
 
 The synthesis is intentionally critical. Literature-derived elements are limited to the four-compartment structure, behavioural alpha regimes, baseline rates and initial condition, plus the classical critical-fractile logic. The synthetic population size, consultation probabilities, coefficient of variation, mismatch costs, scenario counts, and sensitivity settings are coursework assumptions. As a result, the experiment can answer how capacity behaves *within the stated model* but cannot establish what a real provider should schedule without local estimation and a richer service representation.
 
@@ -184,12 +186,14 @@ The principal operational lesson is therefore conditional rather than prescripti
 
 ## References
 
-- [[REFERENCE:singh_gromov_2025]]
-- [[REFERENCE:chatterjee_2020]]
+- [[REFERENCE:allen_2017]]
 - [[REFERENCE:asmundson_taylor_2020]]
 - [[REFERENCE:blyuss_kyrychko_2005]]
-- [[REFERENCE:singh_rebennack_2025]]
+- [[REFERENCE:chatterjee_2020]]
+- [[REFERENCE:hick_2004]]
 - [[REFERENCE:qin_2011]]
+- [[REFERENCE:singh_gromov_2025]]
+- [[REFERENCE:singh_rebennack_2026]]
 
 ## Appendix A. Reproducibility
 
@@ -204,4 +208,4 @@ Regenerate the complete evidence set from the repository root with:
 
 The generated contract consists of four CSV files in `outputs/data` and five PNG files in `outputs/figures`. Validate source integrity before building the document with:
 
-`D:\ProgramData\anaconda3\python.exe scripts/validate_report_sources.py`
+`python scripts/validate_report_sources.py`

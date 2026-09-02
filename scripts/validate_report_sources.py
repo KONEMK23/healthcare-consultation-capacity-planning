@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 
-EXPECTED_REFERENCE_IDS = {"singh_gromov_2025", "chatterjee_2020", "asmundson_taylor_2020", "blyuss_kyrychko_2005", "singh_rebennack_2025", "qin_2011"}
+EXPECTED_REFERENCE_IDS = {"allen_2017", "asmundson_taylor_2020", "blyuss_kyrychko_2005", "chatterjee_2020", "hick_2004", "qin_2011", "singh_gromov_2025", "singh_rebennack_2026"}
 EXPECTED_CSVS = {"daily_metrics.csv", "parameters.csv", "summary.csv", "trajectories.csv"}
 EXPECTED_FIGURES = {"figure_1_compartments.png", "figure_2_risk_ratio.png", "figure_3_demand_uncertainty.png", "figure_4_optimal_capacity.png", "figure_5_sensitivity.png"}
 REFERENCE_FIELDS = {"id", "authors", "year", "title", "journal", "volume", "issue", "pages_or_article", "doi", "url", "role", "limitation"}
@@ -67,7 +67,7 @@ def validate_references(path: Path) -> int:
     if len(ids) != len(set(ids)):
         fail("Duplicate reference IDs found.")
     if set(ids) != EXPECTED_REFERENCE_IDS:
-        fail("Reference IDs do not match the six canonical references.")
+        fail("Reference IDs do not match the eight canonical references.")
     for reference in references:
         if (
             not reference["doi"].startswith("10.")

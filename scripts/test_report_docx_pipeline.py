@@ -55,6 +55,21 @@ class BuilderContractTests(unittest.TestCase):
             source.write_text(mutated_text, encoding="utf-8")
             builder.build_report(source, output)
 
+    def test_canonical_reference_set_includes_stochastic_and_surge_sources(self) -> None:
+        self.assertEqual(
+            set(self.references),
+            {
+                "allen_2017",
+                "asmundson_taylor_2020",
+                "blyuss_kyrychko_2005",
+                "chatterjee_2020",
+                "hick_2004",
+                "qin_2011",
+                "singh_gromov_2025",
+                "singh_rebennack_2026",
+            },
+        )
+
     def test_rejects_indented_nested_bullet(self) -> None:
         mutated = self.source_text.replace(
             "## Abstract\n", "## Abstract\n\n  - nested bullet\n", 1

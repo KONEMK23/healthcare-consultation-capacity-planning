@@ -111,8 +111,8 @@ def load_references() -> set[str]:
         for reference in references
         if isinstance(reference, dict) and isinstance(reference.get("id"), str)
     }
-    if len(ids) != 6:
-        fail(f"references.json must define six unique reference IDs, found {len(ids)}.")
+    if len(ids) != 8:
+        fail(f"references.json must define eight unique reference IDs, found {len(ids)}.")
     return ids
 
 
