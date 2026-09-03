@@ -955,6 +955,8 @@ def _format_table(document: DocumentObject, widths: Sequence[int]) -> None:
                 paragraph.paragraph_format.space_after = Pt(0)
                 paragraph.paragraph_format.line_spacing = 1.0
                 paragraph.paragraph_format.keep_together = True
+                if row_index == 0:
+                    paragraph.paragraph_format.keep_with_next = True
                 for run in paragraph.runs:
                     _set_run_font(
                         run,
@@ -1135,11 +1137,11 @@ def build_report(source: Path, output: Path) -> None:
         if heading_match:
             level = len(heading_match.group(1)) - 1
             heading_text = heading_match.group(2)
-            if heading_text in {"References", "Appendix A. Reproducibility"}:
-                break_paragraph = document.add_paragraph()
-                break_paragraph.paragraph_format.space_after = Pt(0)
-                break_paragraph.add_run().add_break(WD_BREAK.PAGE)
-            document.add_paragraph(heading_text, style=f"Heading {level}")
+            heading_paragraph = document.add_paragraph(
+                heading_text, style=f"Heading {level}"
+            )
+            if heading_text == "References":
+                heading_paragraph.paragraph_format.page_break_before = True
             continue
 
         value_resolved = _resolve_values(line, summary)
