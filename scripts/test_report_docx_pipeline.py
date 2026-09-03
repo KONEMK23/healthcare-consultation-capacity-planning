@@ -10,6 +10,7 @@ from pathlib import Path
 from lxml import etree
 
 import scripts.build_report_docx as builder
+import scripts.validate_report_draft as draft_validator
 import scripts.validate_report_docx as validator
 
 
@@ -69,6 +70,17 @@ class BuilderContractTests(unittest.TestCase):
                 "singh_rebennack_2026",
             },
         )
+
+    def test_reference_validation_accepts_a_report_that_ends_after_references(self) -> None:
+        without_appendix = self.source_text.split(
+            "\n## Appendix A. Reproducibility", 1
+        )[0].rstrip() + "\n"
+        try:
+            draft_validator.validate_citations_and_references(
+                without_appendix, set(self.references)
+            )
+        except ValueError as error:
+            self.fail(str(error))
 
     def test_rejects_indented_nested_bullet(self) -> None:
         mutated = self.source_text.replace(

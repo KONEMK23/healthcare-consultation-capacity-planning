@@ -25,7 +25,6 @@ EXPECTED_SECTION_TITLES = [
     "8. Discussion",
     "9. Conclusion",
     "References",
-    "Appendix A. Reproducibility",
 ]
 EXPECTED_MEDIA_COUNT = 5
 EXPECTED_TABLE_COUNT = 2
@@ -688,20 +687,11 @@ def validate_content_preservation(
         ),
         None,
     )
-    appendix_heading = next(
-        (
-            index
-            for index, paragraph in enumerate(body_paragraphs)
-            if paragraph_style(paragraph) == "Heading1"
-            and paragraph_text(paragraph) == "Appendix A. Reproducibility"
-        ),
-        None,
-    )
-    if references_heading is None or appendix_heading is None:
-        fail("References/Appendix boundaries are missing.")
+    if references_heading is None:
+        fail("References heading is missing.")
     reference_paragraphs = [
         paragraph_text(paragraph)
-        for paragraph in body_paragraphs[references_heading + 1 : appendix_heading]
+        for paragraph in body_paragraphs[references_heading + 1 :]
         if paragraph_text(paragraph)
     ]
     if reference_paragraphs != expected["references"]:
