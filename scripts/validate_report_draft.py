@@ -21,7 +21,6 @@ REQUIRED_HEADINGS = [
     "8. Discussion",
     "9. Conclusion",
     "References",
-    "Appendix A. Reproducibility",
 ]
 REQUIRED_FIGURES = [
     "figure_1_compartments.png",
@@ -111,8 +110,8 @@ def load_references() -> set[str]:
         for reference in references
         if isinstance(reference, dict) and isinstance(reference.get("id"), str)
     }
-    if len(ids) != 6:
-        fail(f"references.json must define six unique reference IDs, found {len(ids)}.")
+    if len(ids) != 8:
+        fail(f"references.json must define eight unique reference IDs, found {len(ids)}.")
     return ids
 
 
@@ -216,9 +215,8 @@ def validate_citations_and_references(text: str, reference_ids: set[str]) -> Non
         fail("Uncited reference IDs: " + ", ".join(sorted(missing_citations)))
     positions = heading_positions(text)
     reference_start = positions["References"]
-    appendix_start = positions["Appendix A. Reproducibility"]
-    reference_section = text[reference_start:appendix_start]
-    outside_references = text[:reference_start] + text[appendix_start:]
+    reference_section = text[reference_start:]
+    outside_references = text[:reference_start]
     if REFERENCE_PATTERN.search(outside_references):
         fail("REFERENCE markers are permitted only inside the References section.")
     list_item_pattern = re.compile(

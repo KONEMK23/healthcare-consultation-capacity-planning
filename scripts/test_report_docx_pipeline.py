@@ -10,6 +10,7 @@ from pathlib import Path
 from lxml import etree
 
 import scripts.build_report_docx as builder
+import scripts.validate_report_draft as draft_validator
 import scripts.validate_report_docx as validator
 
 
@@ -54,6 +55,69 @@ class BuilderContractTests(unittest.TestCase):
             output = Path(directory) / "mutated.docx"
             source.write_text(mutated_text, encoding="utf-8")
             builder.build_report(source, output)
+
+    def test_canonical_reference_set_includes_stochastic_and_surge_sources(self) -> None:
+        self.assertEqual(
+            set(self.references),
+            {
+                "allen_2017",
+                "asmundson_taylor_2020",
+                "blyuss_kyrychko_2005",
+                "chatterjee_2020",
+                "hick_2004",
+                "qin_2011",
+                "singh_gromov_2025",
+                "singh_rebennack_2026",
+            },
+        )
+
+    def test_reference_validation_accepts_a_report_that_ends_after_references(self) -> None:
+        without_appendix = self.source_text.split(
+            "\n## Appendix A. Reproducibility", 1
+        )[0].rstrip() + "\n"
+        try:
+            draft_validator.validate_citations_and_references(
+                without_appendix, set(self.references)
+            )
+        except ValueError as error:
+            self.fail(str(error))
+
+    def test_references_uses_heading_page_break_not_an_empty_break_paragraph(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="report_reference_break_") as directory:
+            output = Path(directory) / "report.docx"
+            builder.build_report(SOURCE, output)
+            with zipfile.ZipFile(output) as archive:
+                root = etree.fromstring(archive.read("word/document.xml"))
+
+        paragraphs = root.xpath(".//w:body/w:p", namespaces=NS)
+        reference_index = next(
+            index
+            for index, paragraph in enumerate(paragraphs)
+            if "".join(paragraph.xpath(".//w:t/text()", namespaces=NS))
+            == "References"
+        )
+        heading = paragraphs[reference_index]
+        previous = paragraphs[reference_index - 1]
+        self.assertTrue(heading.xpath("./w:pPr/w:pageBreakBefore", namespaces=NS))
+        self.assertFalse(previous.xpath(".//w:br[@w:type='page']", namespaces=NS))
+
+    def test_table_headers_stay_with_the_first_data_row(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="report_table_header_") as directory:
+            output = Path(directory) / "report.docx"
+            builder.build_report(SOURCE, output)
+            with zipfile.ZipFile(output) as archive:
+                root = etree.fromstring(archive.read("word/document.xml"))
+
+        policy_table = next(
+            table
+            for table in root.xpath(".//w:tbl", namespaces=NS)
+            if "Cost setting"
+            in "".join(table.xpath(".//w:tr[1]//w:t/text()", namespaces=NS))
+        )
+        header_paragraphs = policy_table.xpath("./w:tr[1]/w:tc/w:p", namespaces=NS)
+        self.assertTrue(header_paragraphs)
+        for paragraph in header_paragraphs:
+            self.assertTrue(paragraph.xpath("./w:pPr/w:keepNext", namespaces=NS))
 
     def test_rejects_indented_nested_bullet(self) -> None:
         mutated = self.source_text.replace(

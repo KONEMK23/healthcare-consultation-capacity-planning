@@ -8,12 +8,14 @@ How should daily consultation capacity change when worried-well behaviour, deman
 
 | Citation key | Role in report | Limitation carried into prose |
 |---|---|---|
-| `singh_gromov_2025` | Four-compartment model and behavioural regimes | Synthetic dynamics do not estimate consultation capacity. |
-| `chatterjee_2020` | Healthcare relevance of worried-well demand | Conceptual discussion, not an optimization study. |
+| `allen_2017` | Standard stochastic epidemic-model formulations | Does not model worried-well consultation demand or the downstream capacity decision. |
 | `asmundson_taylor_2020` | Anxiety and perceived risk context | No compartmental resource-planning model. |
 | `blyuss_kyrychko_2005` | Two-process modelling background | Does not model worried-well capacity demand. |
-| `singh_rebennack_2025` | Scarce healthcare-resource context | Release policies, not this newsvendor capacity decision. |
+| `chatterjee_2020` | Healthcare relevance of worried-well demand | Conceptual discussion, not an optimization study. |
+| `hick_2004` | Healthcare surge-capacity planning context | Planning guidance, not a calibrated consultation-capacity model. |
 | `qin_2011` | Classical newsvendor foundation | Only the single-resource form is used. |
+| `singh_gromov_2025` | Four-compartment model and behavioural regimes | Synthetic dynamics do not estimate consultation capacity. |
+| `singh_rebennack_2026` | Scarce healthcare-resource context | Release policies, not this newsvendor capacity decision. |
 
 `report/references.json` is the canonical source for author order, metadata, DOI URLs, roles, and limitations. Literature provides framing and interpretation; it does not supply unrecorded numerical inputs.
 
@@ -55,7 +57,9 @@ Every report number must be calculated from, or quoted directly from, the saved 
 - `singh_gromov_2025`: model structure, alpha regimes, baseline rates, and initial condition.
 - `chatterjee_2020` and `asmundson_taylor_2020`: worried-well healthcare and psychological relevance, never calibration or capacity evidence.
 - `blyuss_kyrychko_2005`: two-process modelling background only.
-- `singh_rebennack_2025`: outbreak-resource context, distinct from this capacity model.
+- `singh_rebennack_2026`: outbreak-resource context, distinct from this capacity model.
+- `hick_2004`: scalable healthcare surge-planning context, not numerical calibration.
+- `allen_2017`: stochastic epidemic-model context used to distinguish process uncertainty from downstream demand uncertainty.
 - `qin_2011`: classical newsvendor framework; decisions, costs, and synthetic experiments remain coursework choices.
 
 ## Caveat register
@@ -75,5 +79,5 @@ Every report number must be calculated from, or quoted directly from, the saved 
 The evidence is the four CSV files in `outputs/data` and five PNGs in `outputs/figures`. Run `python scripts/run_analysis.py` after changing the model; the parameter record stores seeds 6186 and 6187 plus sample sizes. Then run:
 
 ```powershell
-& 'D:\ProgramData\anaconda3\python.exe' scripts\validate_report_sources.py
+python scripts/validate_report_sources.py
 ```
