@@ -1,4 +1,4 @@
-# MATH6186 Worried-Well Capacity Project
+# Healthcare Consultation Capacity Planning and Stochastic Optimisation
 
 This project reproduces the Singh-Gromov worried-well compartment model,
 converts the trajectories into synthetic daily consultation demand, and solves
